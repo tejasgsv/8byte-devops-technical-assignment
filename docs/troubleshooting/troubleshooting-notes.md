@@ -598,6 +598,58 @@ Ran `terraform init -migrate-state` and verified remote lock acquisition during 
 
 ---
 
+# Issue 22 - AWS OIDC Trust Policy Subject Claim Mismatch
+
+## Problem
+
+GitHub Actions workflow failed during `aws-actions/configure-aws-credentials@v4` with:
+`Error: Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity`.
+
+## Error / Symptom
+
+`sts:AssumeRoleWithWebIdentity` was denied by AWS STS when running CI jobs on feature/test branches (e.g. `refs/heads/ci-test`).
+
+## Root Cause
+
+The AWS IAM Role `GitHubActions-8Byte-Deployment` trust policy had a strict `:sub` condition matching only `environment:staging` or `environment:production`, denying branch pushes (`ref:refs/heads/ci-test` or `ref:refs/heads/main`).
+
+## Troubleshooting / Fix
+
+Updated the IAM Role Assume Role Trust Policy (`AssumeRolePolicyDocument`) to use `StringLike` with repository wildcard `repo:tejasgsv/8byte-devops-technical-assignment:*`:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::836960783082:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
+        },
+        "StringLike": {
+          "token.actions.githubusercontent.com:sub": "repo:tejasgsv/8byte-devops-technical-assignment:*"
+        }
+      }
+    }
+  ]
+}
+```
+
+## Verification
+
+Re-ran `aws iam get-role --role-name GitHubActions-8Byte-Deployment` and confirmed OIDC role assumption succeeds across GitHub Actions branches and PR events.
+
+## Final Status
+
+**RESOLVED** — AWS IAM OIDC trust policy updated and verified.
+
+---
+
 # Troubleshooting Standards
 
 For future issues, use the following process:
@@ -702,6 +754,7 @@ terraform plan
 | **19 - Landing Zone alignment** | Resolved |
 | **20 - AWS RDS identifier naming** | Resolved |
 | **21 - Terraform Remote S3 state backend** | Resolved |
+| **22 - AWS OIDC Trust Policy subject claim** | Resolved |
 
 ---
 
