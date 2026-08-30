@@ -12,10 +12,11 @@ env:
   AWS_REGION: ap-south-1
   ECR_REGISTRY: 836960783082.dkr.ecr.ap-south-1.amazonaws.com
   EKS_CLUSTER_NAME: 8byte-devops-eks
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
 jobs:
   production-approval-and-deploy:
-    name: Production Deployment (Manual Approval Required)
+    name: Production Deployment (Manual Gate Approval Enforced)
     runs-on: ubuntu-latest
     environment:
       name: production
@@ -44,3 +45,17 @@ jobs:
         run: |
           kubectl rollout status deployment/gateway-deployment -n 8byte-prod --timeout=300s
           kubectl get pods -n 8byte-prod
+
+      - name: Send Slack Notification on Production Success
+        if: success() && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"🚀 *8Byte Production Deployment Live!* Tag: `${{ github.event.inputs.image_tag }}` successfully deployed to `8byte-prod`"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send Slack Notification on Production Failure
+        if: failure() && env.SLACK_WEBHOOK_URL != ''
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"🚨 *8Byte Production Deployment FAILED!* Tag: `${{ github.event.inputs.image_tag }}` failed during rollout."}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}

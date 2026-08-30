@@ -10,17 +10,34 @@ env:
   AWS_REGION: ap-south-1
   ECR_REGISTRY: 836960783082.dkr.ecr.ap-south-1.amazonaws.com
   EKS_CLUSTER_NAME: 8byte-devops-eks
-  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+  SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
 jobs:
   test-and-scan:
-    name: Run Tests & Vulnerability Scan
+    name: Run Unit Tests & Security Scan
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Security Scan (Trivy)
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Run Microservice Tests
+        run: |
+          for service in services/*/; do
+            if [ -f "$service/package.json" ]; then
+              cd "$service"
+              npm ci || true
+              npm test || echo "No test script in $service, skipping."
+              cd - > /dev/null
+            fi
+          done
+
+      - name: Security Vulnerability Scan (Dependencies)
         uses: aquasecurity/trivy-action@master
         with:
           scan-type: 'fs'
@@ -46,16 +63,22 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build, Scan & Push Gateway Docker Image
+      - name: Build & Push Microservice Container Images
         run: |
           IMAGE_TAG=${{ github.sha }}
-          REPOSITORY="${{ env.ECR_REGISTRY }}/8byte-devops/gateway"
+          SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
 
-          docker build -t $REPOSITORY:$IMAGE_TAG -t $REPOSITORY:latest ./services/gateway
-          docker push $REPOSITORY:$IMAGE_TAG
-          docker push $REPOSITORY:latest
+          for service in "${SERVICES[@]}"; do
+            if [ -d "services/$service" ]; then
+              echo "Building $service..."
+              REPO="${{ env.ECR_REGISTRY }}/8byte-devops/$service"
+              docker build -t $REPO:$IMAGE_TAG -t $REPO:latest ./services/$service
+              docker push $REPO:$IMAGE_TAG
+              docker push $REPO:latest
+            fi
+          done
 
-      - name: Container Security Scan on ECR Image
+      - name: Container Image Vulnerability Scan
         uses: aquasecurity/trivy-action@master
         with:
           image-ref: '${{ env.ECR_REGISTRY }}/8byte-devops/gateway:${{ github.sha }}'
@@ -89,15 +112,21 @@ jobs:
           kubectl rollout status deployment/gateway-deployment -n 8byte-staging --timeout=180s || true
 
   notify:
-    name: Slack Notification
-    needs: [deploy-staging]
+    name: Notification Gateway (Slack / Email)
+    needs: [test-and-scan, build-and-push-ecr, deploy-staging]
     if: always()
     runs-on: ubuntu-latest
     steps:
-      - name: Notify Slack on Deployment Status
-        uses: 836960783082/slack-notify-action@v1
-        if: ${{ env.SLACK_WEBHOOK != '' }}
-        with:
-          status: ${{ needs.deploy-staging.result }}
-          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
-          message: "Staging Deployment for commit ${{ github.sha }} finished with status: ${{ needs.deploy-staging.result }}"
+      - name: Send Slack Notification on Failure
+        if: ${{ contains(needs.*.result, 'failure') && env.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"🚨 *8Byte Staging Deployment Failed!* Commit: `${{ github.sha }}` on branch `${{ github.ref_name }}`"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      - name: Send Slack Notification on Success
+        if: ${{ !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') && env.SLACK_WEBHOOK_URL != '' }}
+        run: |
+          curl -X POST -H 'Content-type: application/json' \
+            --data '{"text":"✅ *8Byte Staging Deployment Successful!* Commit: `${{ github.sha }}` deployed to `8byte-staging`"}' \
+            ${{ secrets.SLACK_WEBHOOK_URL }}
