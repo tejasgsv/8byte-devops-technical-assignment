@@ -23,6 +23,9 @@ jobs:
   production-deploy:
     name: Production Deployment (Manual Gate Promotion)
     runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -32,6 +35,7 @@ jobs:
         with:
           role-to-assume: ${{ env.OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          audience: sts.amazonaws.com
 
       - name: Update Kubeconfig for EKS
         run: |
