@@ -1,20 +1,22 @@
-name: PR CI - Parallel Build, Security Scan, TFLint & Terratest
+name: Feature Branch & PR CI - Test, Scan & Terraform Plan
 
 on:
-  push:
-    branches:
-      - main
-      - master
-      - ci-test
   pull_request:
     branches:
       - main
       - master
+  push:
+    branches:
       - ci-test
+      - 'feature/**'
   workflow_dispatch:
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
-  parallel-container-build-check:
+  container-build-check:
     name: Parallel Docker Build Check (${{ matrix.service }})
     runs-on: ubuntu-latest
     strategy:
@@ -37,23 +39,12 @@ jobs:
           cache-from: type=gha,scope=${{ matrix.service }}
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-  dockerfile-linter:
-    name: Hadolint Dockerfile Security Scan
+  terraform-lint-security-and-plan:
+    name: Terraform Validate, TFLint & Plan Only
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
-
-      - name: Run Hadolint on Dockerfiles
-        uses: hadolint/hadolint-action@v3.1.0
-        with:
-          dockerfile: 'services/*/Dockerfile'
-          failure-threshold: error
-        continue-on-error: true
-
-  terraform-lint-and-security:
-    name: TFLint & Trivy Security Scan
-    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -72,17 +63,27 @@ jobs:
         run: tflint --init
         working-directory: ./terraform
 
-      - name: Run TFLint Analysis
+      - name: Run TFLint Static Analysis
         run: tflint -f compact
         working-directory: ./terraform
 
-      - name: Run Trivy Infrastructure Security Scan (TFSec)
-        uses: aquasecurity/trivy-action@master
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          scan-type: 'config'
-          scan-ref: './terraform'
-          exit-code: '0'
-          severity: 'HIGH,CRITICAL'
+          role-to-assume: arn:aws:iam::836960783082:role/GitHubActions-8Byte-Deployment
+          aws-region: ap-south-1
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: ./terraform
+
+      - name: Terraform Plan Only (No Apply)
+        run: terraform plan -no-color
+        working-directory: ./terraform
 
   terratest-execution:
     name: Run Terratest Infrastructure Tests

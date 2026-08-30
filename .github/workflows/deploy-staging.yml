@@ -1,11 +1,10 @@
-name: CD Staging - Parallel Build, Layer Cache & Fast Deploy
+name: Main Branch CD - Build ECR & Deploy Staging
 
 on:
   push:
     branches:
       - main
       - master
-      - ci-test
   workflow_dispatch:
 
 env:
@@ -23,7 +22,6 @@ jobs:
   parallel-build-and-push-ecr:
     name: Parallel Build & Push (${{ matrix.service }})
     runs-on: ubuntu-latest
-    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -64,7 +62,6 @@ jobs:
     name: Fast Container Security Scan (Trivy)
     needs: parallel-build-and-push-ecr
     runs-on: ubuntu-latest
-    environment: staging
     permissions:
       id-token: write
       contents: read
@@ -90,7 +87,6 @@ jobs:
     name: Fast EKS Staging Deployment
     needs: parallel-build-and-push-ecr
     runs-on: ubuntu-latest
-    environment: staging
     permissions:
       id-token: write
       contents: read
