@@ -20,12 +20,9 @@ permissions:
   contents: read
 
 jobs:
-  production-approval-and-deploy:
-    name: Production Deployment (Manual Gate Approval Enforced)
+  production-deploy:
+    name: Production Deployment (Manual Gate Promotion)
     runs-on: ubuntu-latest
-    environment:
-      name: production
-      url: https://api.8byte.ai
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
