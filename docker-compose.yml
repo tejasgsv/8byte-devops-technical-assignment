@@ -1,0 +1,360 @@
+services:
+
+  # ==========================================
+  # API GATEWAY
+  # ==========================================
+  gateway:
+    image: 8byte-gateway:dev
+    container_name: 8byte-gateway
+    ports:
+      - "8081:80"
+    depends_on:
+      - frontend
+      - admin
+      - catalog
+      - user-auth
+      - order-payment
+      - fulfillment
+      - shopping
+      - platform
+      - inventory
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # FRONTEND
+  # ==========================================
+  frontend:
+    image: 8byte-frontend:dev
+    container_name: 8byte-frontend
+    expose:
+      - "80"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # ADMIN
+  # ==========================================
+  admin:
+    image: 8byte-admin:dev
+    container_name: 8byte-admin
+    expose:
+      - "80"
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # BACKEND SERVICES
+  # ==========================================
+
+  user-auth:
+    image: 8byte-user-auth:dev
+    container_name: 8byte-user-auth
+    expose:
+      - "3000"
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET}
+      SECRET_KEY: ${SECRET_KEY}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  catalog:
+    image: 8byte-catalog:dev
+    container_name: 8byte-catalog
+    expose:
+      - "3001"
+    environment:
+      NODE_ENV: production
+      PORT: 3001
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  order-payment:
+    image: 8byte-order-payment:dev
+    container_name: 8byte-order-payment
+    expose:
+      - "3002"
+    environment:
+      NODE_ENV: production
+      PORT: 3002
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  fulfillment:
+    image: 8byte-fulfillment:dev
+    container_name: 8byte-fulfillment
+    expose:
+      - "3003"
+    environment:
+      NODE_ENV: production
+      PORT: 3003
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  shopping:
+    image: 8byte-shopping:dev
+    container_name: 8byte-shopping
+    expose:
+      - "3004"
+    environment:
+      NODE_ENV: production
+      PORT: 3004
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  platform:
+    image: 8byte-platform:dev
+    container_name: 8byte-platform
+    expose:
+      - "3005"
+    environment:
+      NODE_ENV: production
+      PORT: 3005
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_BUCKET_NAME: ${AWS_BUCKET_NAME}
+      AWS_REGION: ${AWS_REGION}
+      AWS_ENDPOINT: ${AWS_ENDPOINT}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  inventory:
+    image: 8byte-inventory:dev
+    container_name: 8byte-inventory
+    expose:
+      - "3009"
+    environment:
+      NODE_ENV: production
+      PORT: 3009
+      DB_HOST: database
+      DB_PORT: 5432
+      DB_NAME: App_db
+      DB_USER: App_user
+      DB_PASSWORD: ${DB_PASSWORD}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_URL: redis://redis:6379
+      RABBITMQ_URL: ${RABBITMQ_URL}
+    depends_on:
+      database:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # DATABASE
+  # ==========================================
+
+  database:
+    image: postgres:16-alpine
+    container_name: 8byte-database
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # REDIS
+  # ==========================================
+
+  redis:
+    image: redis/redis-stack-server:latest
+    container_name: 8byte-redis
+    expose:
+      - "6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # RABBITMQ
+  # ==========================================
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: 8byte-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+    restart: unless-stopped
+
+  # ==========================================
+  # MINIO
+  # ==========================================
+
+  minio:
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    container_name: 8byte-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    networks:
+      - app-network
+    restart: unless-stopped
+
+# ==========================================
+# VOLUMES
+# ==========================================
+
+volumes:
+  postgres-data:
+  redis-data:
+  rabbitmq-data:
+  minio-data:
+
+# ==========================================
+# NETWORK
+# ==========================================
+
+networks:
+  app-network:
+    driver: bridge
