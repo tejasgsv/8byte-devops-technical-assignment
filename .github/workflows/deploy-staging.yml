@@ -15,8 +15,37 @@ env:
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
 jobs:
-  docker-build-and-push-ecr:
-    name: Build Microservice Docker Images & Push to ECR
+  docker-build-and-test:
+    name: Build Microservice Containers & Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Build Local Microservice Containers
+        run: |
+          echo "Building microservice container images..."
+          SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
+
+          for service in "${SERVICES[@]}"; do
+            if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
+              echo "Building $service..."
+              docker build -t "8byte-staging-$service:latest" ./services/$service
+            fi
+          done
+
+      - name: Container Security Vulnerability Scan (Gateway)
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '8byte-staging-gateway:latest'
+          format: 'table'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
+
+  build-and-push-ecr:
+    name: Authenticate AWS & Push Images to ECR
+    needs: docker-build-and-test
+    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -33,7 +62,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push All Container Images to ECR
+      - name: Push Container Images to ECR Registry
         run: |
           IMAGE_TAG=${{ github.sha }}
           ECR_REGISTRY="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
@@ -41,9 +70,6 @@ jobs:
 
           for service in "${SERVICES[@]}"; do
             if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
-              echo "----------------------------------------"
-              echo "Building & Pushing $service to ECR..."
-              echo "----------------------------------------"
               REPO="$ECR_REGISTRY/8byte-devops/$service"
               docker build -t $REPO:$IMAGE_TAG -t $REPO:latest ./services/$service
               docker push $REPO:$IMAGE_TAG
@@ -51,17 +77,10 @@ jobs:
             fi
           done
 
-      - name: Container Security Scan (Gateway Image)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/8byte-devops/gateway:${{ github.sha }}'
-          format: 'table'
-          exit-code: '0'
-          severity: 'HIGH,CRITICAL'
-
   deploy-staging:
-    name: Deploy Container Workloads to EKS Staging
-    needs: docker-build-and-push-ecr
+    name: Deploy Workloads to EKS Staging Namespace
+    needs: build-and-push-ecr
+    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -86,7 +105,7 @@ jobs:
 
   notify:
     name: Slack / Email Notification Gateway
-    needs: [docker-build-and-push-ecr, deploy-staging]
+    needs: [docker-build-and-test]
     if: always()
     runs-on: ubuntu-latest
     steps:
