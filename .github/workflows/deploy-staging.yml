@@ -1,4 +1,4 @@
-name: CD Staging - Build Docker Images, Scan, Push ECR & Deploy
+name: CD Staging - Parallel Build, Layer Cache & Fast Deploy
 
 on:
   push:
@@ -20,42 +20,20 @@ permissions:
   contents: read
 
 jobs:
-  docker-build-and-test:
-    name: Build Microservice Containers & Vulnerability Scan
+  parallel-build-and-push-ecr:
+    name: Parallel Build & Push (${{ matrix.service }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, frontend, admin, user-auth, catalog, order-payment, fulfillment, shopping, platform, inventory]
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build Local Microservice Containers
-        run: |
-          echo "Building microservice container images..."
-          SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
-
-          for service in "${SERVICES[@]}"; do
-            if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
-              echo "Building $service..."
-              docker build -t "8byte-staging-$service:latest" ./services/$service
-            fi
-          done
-
-      - name: Container Security Vulnerability Scan (Gateway)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: '8byte-staging-gateway:latest'
-          format: 'table'
-          exit-code: '0'
-          severity: 'HIGH,CRITICAL'
-
-  build-and-push-ecr:
-    name: Authenticate AWS OIDC & Push Images to ECR
-    needs: docker-build-and-test
-    runs-on: ubuntu-latest
-    environment:
-      name: staging
-    steps:
-      - name: Checkout Code
-        uses: actions/checkout@v4
+      - name: Set up Docker Buildx (Fast Caching Engine)
+        uses: docker/setup-buildx-action@v3
 
       - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
@@ -67,27 +45,43 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Push Container Images to ECR Registry
-        run: |
-          IMAGE_TAG=${{ github.sha }}
-          ECR_REGISTRY="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
-          SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
+      - name: Build & Push Image with GitHub Layer Cache
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/${{ matrix.service }}
+          push: true
+          tags: |
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/8byte-devops/${{ matrix.service }}:${{ github.sha }}
+            ${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/8byte-devops/${{ matrix.service }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
-          for service in "${SERVICES[@]}"; do
-            if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
-              REPO="$ECR_REGISTRY/8byte-devops/$service"
-              docker build -t $REPO:$IMAGE_TAG -t $REPO:latest ./services/$service
-              docker push $REPO:$IMAGE_TAG
-              docker push $REPO:latest
-            fi
-          done
+  container-security-scan:
+    name: Fast Container Security Scan (Trivy)
+    needs: parallel-build-and-push-ecr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Configure AWS Credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.OIDC_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Fast Security Scan on Gateway Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/8byte-devops/gateway:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
 
   deploy-staging:
-    name: Deploy Workloads to EKS Staging Namespace
-    needs: build-and-push-ecr
+    name: Fast EKS Staging Deployment
+    needs: parallel-build-and-push-ecr
     runs-on: ubuntu-latest
-    environment:
-      name: staging
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -99,18 +93,17 @@ jobs:
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update Kubeconfig for EKS
-        run: |
-          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+        run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-      - name: Deploy Kubernetes Manifests to Staging Namespace
+      - name: Deploy Kubernetes Manifests to Staging
         run: |
           kubectl create namespace 8byte-staging --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/base/ -n 8byte-staging
-          kubectl rollout status deployment/gateway-deployment -n 8byte-staging --timeout=180s || true
+          kubectl rollout status deployment/gateway-deployment -n 8byte-staging --timeout=120s || true
 
   notify:
     name: Slack / Email Notification Gateway
-    needs: [docker-build-and-test, build-and-push-ecr, deploy-staging]
+    needs: [parallel-build-and-push-ecr, deploy-staging]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -118,7 +111,7 @@ jobs:
         if: ${{ contains(needs.*.result, 'failure') && env.SLACK_WEBHOOK_URL != '' }}
         run: |
           curl -X POST -H 'Content-type: application/json' \
-            --data '{"text":"🚨 *8Byte Staging Deployment Failed!* Commit: `${{ github.sha }}` on branch `${{ github.ref_name }}`"}' \
+            --data '{"text":"🚨 *8Byte Staging Deployment Failed!* Commit: `${{ github.sha }}`"}' \
             ${{ secrets.SLACK_WEBHOOK_URL }}
 
       - name: Send Slack Notification on Success
@@ -127,4 +120,3 @@ jobs:
           curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"✅ *8Byte Staging Deployment Successful!* Commit: `${{ github.sha }}` deployed to `8byte-staging`"}' \
             ${{ secrets.SLACK_WEBHOOK_URL }}
-

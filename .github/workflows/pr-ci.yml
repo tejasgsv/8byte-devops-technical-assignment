@@ -1,4 +1,4 @@
-name: PR CI - Containerized Tests, Security Scan, TFLint & Terratest
+name: PR CI - Parallel Build, Security Scan, TFLint & Terratest
 
 on:
   push:
@@ -14,26 +14,28 @@ on:
   workflow_dispatch:
 
 jobs:
-  docker-containerized-tests:
-    name: Docker Containerized Unit & Integration Tests
+  parallel-container-build-check:
+    name: Parallel Docker Build Check (${{ matrix.service }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: [gateway, frontend, admin, user-auth, catalog, order-payment, fulfillment, shopping, platform, inventory]
+
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Build & Test Microservice Containers
-        run: |
-          echo "Building and running tests inside Docker containers..."
-          SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-          for service in "${SERVICES[@]}"; do
-            if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
-              echo "----------------------------------------"
-              echo "Building Docker container for $service..."
-              echo "----------------------------------------"
-              docker build -t "8byte-test-$service:latest" "./services/$service"
-            fi
-          done
+      - name: Fast Docker Build Check with Layer Cache
+        uses: docker/build-push-action@v5
+        with:
+          context: ./services/${{ matrix.service }}
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
   dockerfile-linter:
     name: Hadolint Dockerfile Security Scan
