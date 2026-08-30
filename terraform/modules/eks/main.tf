@@ -24,6 +24,7 @@ resource "aws_eks_node_group" "main" {
   node_role_arn   = var.node_role_arn
   subnet_ids      = var.private_app_subnet_ids
 
+  ami_type       = "AL2023_x86_64_STANDARD"
   instance_types = var.node_instance_types
 
   scaling_config {

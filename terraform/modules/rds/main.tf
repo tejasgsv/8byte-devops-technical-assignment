@@ -1,10 +1,10 @@
 # DB Subnet Group
 resource "aws_db_subnet_group" "main" {
-  name       = "${var.project_name}-db-subnet-group"
+  name       = "postgres-${var.project_name}-db-subnet-group"
   subnet_ids = var.private_db_subnet_ids
 
   tags = {
-    Name        = "${var.project_name}-db-subnet-group"
+    Name        = "postgres-${var.project_name}-db-subnet-group"
     Project     = var.project_name
     Environment = var.environment
   }
@@ -33,7 +33,7 @@ resource "aws_db_instance" "main" {
   backup_retention_period = 7
 
   tags = {
-    Name        = "${var.project_name}-postgres"
+    Name        = "postgres-${var.project_name}"
     Project     = var.project_name
     Environment = var.environment
   }

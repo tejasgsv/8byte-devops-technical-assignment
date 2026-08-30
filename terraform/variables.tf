@@ -57,7 +57,7 @@ variable "private_db_subnet_cidrs" {
 variable "kubernetes_version" {
   description = "Kubernetes control plane version for EKS"
   type        = string
-  default     = "1.29"
+  default     = "1.30"
 }
 
 variable "node_instance_types" {
@@ -101,7 +101,7 @@ variable "db_password" {
   description = "Database master password"
   type        = string
   sensitive   = true
-  default     = "SecureDevOpsP@ss123"
+  default     = "SecureDevOpsPass123"
 }
 
 variable "db_instance_class" {
