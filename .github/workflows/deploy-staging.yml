@@ -51,6 +51,8 @@ jobs:
     name: Authenticate AWS OIDC & Push Images to ECR
     needs: docker-build-and-test
     runs-on: ubuntu-latest
+    environment:
+      name: staging
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
