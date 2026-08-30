@@ -78,3 +78,6 @@ coverage/
 *.backup
 *.bak
 *.old
+
+# Local AWS CI/CD policy files
+github-actions-*-policy.json

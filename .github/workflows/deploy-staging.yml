@@ -84,6 +84,8 @@ jobs:
     name: Deploy Workloads to EKS Staging Namespace
     needs: build-and-push-ecr
     runs-on: ubuntu-latest
+    environment:
+      name: staging
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -123,3 +125,4 @@ jobs:
           curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"✅ *8Byte Staging Deployment Successful!* Commit: `${{ github.sha }}` deployed to `8byte-staging`"}' \
             ${{ secrets.SLACK_WEBHOOK_URL }}
+

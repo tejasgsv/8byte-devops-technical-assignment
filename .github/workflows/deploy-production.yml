@@ -23,6 +23,8 @@ jobs:
   production-deploy:
     name: Production Deployment (Manual Gate Promotion)
     runs-on: ubuntu-latest
+    environment:
+      name: production
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
@@ -60,3 +62,4 @@ jobs:
           curl -X POST -H 'Content-type: application/json' \
             --data '{"text":"🚨 *8Byte Production Deployment FAILED!* Tag: `${{ github.event.inputs.image_tag }}` failed during rollout."}' \
             ${{ secrets.SLACK_WEBHOOK_URL }}
+
