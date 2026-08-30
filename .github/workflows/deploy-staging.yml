@@ -9,10 +9,15 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
-  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID || '836960783082' }}
+  AWS_REGION: ap-south-1
+  AWS_ACCOUNT_ID: '836960783082'
+  OIDC_ROLE_ARN: arn:aws:iam::836960783082:role/GitHubActions-8Byte-Deployment
   EKS_CLUSTER_NAME: 8byte-devops-eks
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   docker-build-and-test:
@@ -43,19 +48,17 @@ jobs:
           severity: 'HIGH,CRITICAL'
 
   build-and-push-ecr:
-    name: Authenticate AWS & Push Images to ECR
+    name: Authenticate AWS OIDC & Push Images to ECR
     needs: docker-build-and-test
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ env.OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Log in to Amazon ECR
@@ -80,17 +83,15 @@ jobs:
   deploy-staging:
     name: Deploy Workloads to EKS Staging Namespace
     needs: build-and-push-ecr
-    if: ${{ secrets.AWS_ACCESS_KEY_ID != '' }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials
+      - name: Configure AWS Credentials via OIDC
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ env.OIDC_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Update Kubeconfig for EKS
@@ -105,7 +106,7 @@ jobs:
 
   notify:
     name: Slack / Email Notification Gateway
-    needs: [docker-build-and-test]
+    needs: [docker-build-and-test, build-and-push-ecr, deploy-staging]
     if: always()
     runs-on: ubuntu-latest
     steps:
