@@ -105,5 +105,6 @@ jobs:
       - name: Execute Terratest Go Suite
         run: |
           cd terraform/test
+          go mod tidy
           go test -v -timeout 15m
         continue-on-error: true
