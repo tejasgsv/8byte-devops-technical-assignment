@@ -1,10 +1,17 @@
 name: PR CI - Test, Security Scan, TFLint & Terratest
 
 on:
+  push:
+    branches:
+      - main
+      - master
+      - ci-test
   pull_request:
     branches:
       - main
       - master
+      - ci-test
+  workflow_dispatch:
 
 jobs:
   microservices-lint-and-test:

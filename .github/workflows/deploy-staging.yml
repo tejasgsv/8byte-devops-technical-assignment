@@ -5,6 +5,8 @@ on:
     branches:
       - main
       - master
+      - ci-test
+  workflow_dispatch:
 
 env:
   AWS_REGION: ap-south-1
