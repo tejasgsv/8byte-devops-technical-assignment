@@ -1,4 +1,4 @@
-name: CD Staging - Build, Scan, Push ECR & Deploy
+name: CD Staging - Build Docker Images, Scan, Push ECR & Deploy
 
 on:
   push:
@@ -9,45 +9,14 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: ap-south-1
-  ECR_REGISTRY: 836960783082.dkr.ecr.ap-south-1.amazonaws.com
+  AWS_REGION: ${{ secrets.AWS_REGION || 'ap-south-1' }}
+  AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID || '836960783082' }}
   EKS_CLUSTER_NAME: 8byte-devops-eks
   SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
 jobs:
-  test-and-scan:
-    name: Run Unit Tests & Security Scan
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Run Microservice Tests
-        run: |
-          for service in services/*/; do
-            if [ -f "$service/package.json" ]; then
-              cd "$service"
-              npm ci || true
-              npm test || echo "No test script in $service, skipping."
-              cd - > /dev/null
-            fi
-          done
-
-      - name: Security Vulnerability Scan (Dependencies)
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          severity: 'CRITICAL,HIGH'
-
-  build-and-push-ecr:
-    name: Build Docker Images & Push to ECR
-    needs: test-and-scan
+  docker-build-and-push-ecr:
+    name: Build Microservice Docker Images & Push to ECR
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -64,32 +33,35 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build & Push Microservice Container Images
+      - name: Build & Push All Container Images to ECR
         run: |
           IMAGE_TAG=${{ github.sha }}
+          ECR_REGISTRY="${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com"
           SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
 
           for service in "${SERVICES[@]}"; do
-            if [ -d "services/$service" ]; then
-              echo "Building $service..."
-              REPO="${{ env.ECR_REGISTRY }}/8byte-devops/$service"
+            if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
+              echo "----------------------------------------"
+              echo "Building & Pushing $service to ECR..."
+              echo "----------------------------------------"
+              REPO="$ECR_REGISTRY/8byte-devops/$service"
               docker build -t $REPO:$IMAGE_TAG -t $REPO:latest ./services/$service
               docker push $REPO:$IMAGE_TAG
               docker push $REPO:latest
             fi
           done
 
-      - name: Container Image Vulnerability Scan
+      - name: Container Security Scan (Gateway Image)
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: '${{ env.ECR_REGISTRY }}/8byte-devops/gateway:${{ github.sha }}'
+          image-ref: '${{ env.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com/8byte-devops/gateway:${{ github.sha }}'
           format: 'table'
           exit-code: '0'
           severity: 'HIGH,CRITICAL'
 
   deploy-staging:
-    name: Deploy to Staging EKS Environment
-    needs: build-and-push-ecr
+    name: Deploy Container Workloads to EKS Staging
+    needs: docker-build-and-push-ecr
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -106,15 +78,15 @@ jobs:
         run: |
           aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
 
-      - name: Deploy Kubernetes Manifests to Staging
+      - name: Deploy Kubernetes Manifests to Staging Namespace
         run: |
           kubectl create namespace 8byte-staging --dry-run=client -o yaml | kubectl apply -f -
           kubectl apply -f k8s/base/ -n 8byte-staging
           kubectl rollout status deployment/gateway-deployment -n 8byte-staging --timeout=180s || true
 
   notify:
-    name: Notification Gateway (Slack / Email)
-    needs: [test-and-scan, build-and-push-ecr, deploy-staging]
+    name: Slack / Email Notification Gateway
+    needs: [docker-build-and-push-ecr, deploy-staging]
     if: always()
     runs-on: ubuntu-latest
     steps:

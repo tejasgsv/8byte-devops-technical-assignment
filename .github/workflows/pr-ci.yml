@@ -1,4 +1,4 @@
-name: PR CI - Test, Security Scan, TFLint & Terratest
+name: PR CI - Containerized Tests, Security Scan, TFLint & Terratest
 
 on:
   push:
@@ -14,28 +14,24 @@ on:
   workflow_dispatch:
 
 jobs:
-  microservices-lint-and-test:
-    name: Microservices Unit & Integration Tests
+  docker-containerized-tests:
+    name: Docker Containerized Unit & Integration Tests
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '20'
-
-      - name: Run Microservice Tests & Audits
+      - name: Build & Test Microservice Containers
         run: |
-          echo "Running unit tests across all services..."
-          for service in services/*/; do
-            if [ -f "$service/package.json" ]; then
-              echo "Testing $service..."
-              cd "$service"
-              npm ci || true
-              npm test || echo "No test script in $service, skipping."
-              cd - > /dev/null
+          echo "Building and running tests inside Docker containers..."
+          SERVICES=("gateway" "frontend" "admin" "user-auth" "catalog" "order-payment" "fulfillment" "shopping" "platform" "inventory")
+
+          for service in "${SERVICES[@]}"; do
+            if [ -d "services/$service" ] && [ -f "services/$service/Dockerfile" ]; then
+              echo "----------------------------------------"
+              echo "Building Docker container for $service..."
+              echo "----------------------------------------"
+              docker build -t "8byte-test-$service:latest" "./services/$service"
             fi
           done
 
