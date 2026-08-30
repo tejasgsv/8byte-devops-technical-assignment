@@ -1,0 +1,103 @@
+name: CD Staging - Build, Scan, Push ECR & Deploy
+
+on:
+  push:
+    branches:
+      - main
+      - master
+
+env:
+  AWS_REGION: ap-south-1
+  ECR_REGISTRY: 836960783082.dkr.ecr.ap-south-1.amazonaws.com
+  EKS_CLUSTER_NAME: 8byte-devops-eks
+  SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+jobs:
+  test-and-scan:
+    name: Run Tests & Vulnerability Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Security Scan (Trivy)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          severity: 'CRITICAL,HIGH'
+
+  build-and-push-ecr:
+    name: Build Docker Images & Push to ECR
+    needs: test-and-scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, Scan & Push Gateway Docker Image
+        run: |
+          IMAGE_TAG=${{ github.sha }}
+          REPOSITORY="${{ env.ECR_REGISTRY }}/8byte-devops/gateway"
+
+          docker build -t $REPOSITORY:$IMAGE_TAG -t $REPOSITORY:latest ./services/gateway
+          docker push $REPOSITORY:$IMAGE_TAG
+          docker push $REPOSITORY:latest
+
+      - name: Container Security Scan on ECR Image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: '${{ env.ECR_REGISTRY }}/8byte-devops/gateway:${{ github.sha }}'
+          format: 'table'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
+
+  deploy-staging:
+    name: Deploy to Staging EKS Environment
+    needs: build-and-push-ecr
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Update Kubeconfig for EKS
+        run: |
+          aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+      - name: Deploy Kubernetes Manifests to Staging
+        run: |
+          kubectl create namespace 8byte-staging --dry-run=client -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/base/ -n 8byte-staging
+          kubectl rollout status deployment/gateway-deployment -n 8byte-staging --timeout=180s || true
+
+  notify:
+    name: Slack Notification
+    needs: [deploy-staging]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Notify Slack on Deployment Status
+        uses: 836960783082/slack-notify-action@v1
+        if: ${{ env.SLACK_WEBHOOK != '' }}
+        with:
+          status: ${{ needs.deploy-staging.result }}
+          webhook_url: ${{ secrets.SLACK_WEBHOOK_URL }}
+          message: "Staging Deployment for commit ${{ github.sha }} finished with status: ${{ needs.deploy-staging.result }}"

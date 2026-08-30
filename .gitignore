@@ -11,13 +11,12 @@ dist/
 build/
 *.local
 
-# Environment files
+# Environment files & Secrets
 .env
 .env.*
 .env.local
+.env.development
 !.env.example
-
-# Keys and Certificates
 *.pem
 *.key
 *.crt
@@ -25,12 +24,29 @@ build/
 *.p12
 *.pfx
 
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+terraform.tfvars.secret
+
+# Kubernetes Secrets & Credentials
+*secret*.yaml
+*secrets*.yaml
+!k8s/base/secrets.example.yaml
+
 # Logs
 *.log
 logs/
 *.log.*
 
-# Operating System
+# Operating System & Editors
 .DS_Store
 .DS_Store?
 ._*
@@ -39,13 +55,6 @@ logs/
 ehthumbs.db
 Thumbs.db
 desktop.ini
-
-# Docker
-certbot/
-*.tar
-*.tar.gz
-
-# IDE
 .vscode/
 .idea/
 *.swp
@@ -57,17 +66,15 @@ certbot/
 *.sublime-project
 *.sublime-workspace
 
-# Testing
+# Docker & Temporary
+certbot/
+*.tar
+*.tar.gz
 coverage/
 .nyc_output/
-
-# Temporary files
 *.tmp
 *.temp
 .cache/
-
-# Backup files
 *.backup
 *.bak
 *.old
-.env.dev

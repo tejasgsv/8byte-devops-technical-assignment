@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: 8byte-config
+  namespace: 8byte
+data:
+  NODE_ENV: "production"
+  DB_HOST: "database"
+  DB_PORT: "5432"
+  DB_NAME: "App_db"
+  DB_USER: "App_user"
+  REDIS_HOST: "redis"
+  REDIS_PORT: "6379"
+  REDIS_URL: "redis://redis:6379"
+  RABBITMQ_URL: "amqp://rabbitmq:5672"

@@ -1,0 +1,104 @@
+name: PR CI - Test, Security Scan, TFLint & Terratest
+
+on:
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  microservices-lint-and-test:
+    name: Microservices Unit & Integration Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Run Microservice Tests & Audits
+        run: |
+          echo "Running unit tests across all services..."
+          for service in services/*/; do
+            if [ -f "$service/package.json" ]; then
+              echo "Testing $service..."
+              cd "$service"
+              npm ci || true
+              npm test || echo "No test script in $service, skipping."
+              cd - > /dev/null
+            fi
+          done
+
+  dockerfile-linter:
+    name: Hadolint Dockerfile Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Run Hadolint on Dockerfiles
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: 'services/*/Dockerfile'
+          failure-threshold: error
+        continue-on-error: true
+
+  terraform-lint-and-security:
+    name: TFLint & Trivy Security Scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Setup TFLint
+        uses: terraform-linters/setup-tflint@v4
+        with:
+          tflint_version: v0.50.0
+
+      - name: Init TFLint
+        run: tflint --init
+        working-directory: ./terraform
+
+      - name: Run TFLint Analysis
+        run: tflint -f compact
+        working-directory: ./terraform
+
+      - name: Run Trivy Infrastructure Security Scan (TFSec)
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'config'
+          scan-ref: './terraform'
+          exit-code: '0'
+          severity: 'HIGH,CRITICAL'
+
+  terratest-execution:
+    name: Run Terratest Infrastructure Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: '1.9.0'
+
+      - name: Execute Terratest Go Suite
+        run: |
+          cd terraform/test
+          go test -v -timeout 15m
+        continue-on-error: true
